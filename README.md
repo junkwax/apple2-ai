@@ -118,8 +118,8 @@ apple2-ai/
 │    ├── hardware.md        # Slot assignments, wiring, known quirks
 │    └── photos/            # Hardware photos and screenshots
 └── bin/
-    ├── APPLE2AI.BIN        # Applesoft auto-boot stub
-    └── README.md           # Disk image build instructions
+    ├── APPLE2AI.BIN        # Compiled Build Binary
+    └── README.md           # BIN Information
 ```
 
 ## Known Apple II Quirks
