@@ -1,6 +1,6 @@
-# APPLE&nbsp; ][ &nbsp;AI
+# APPLE2-AI
 
-Talk to Google Gemini from a 1977 Apple II — in 6502 assembly, over bare-metal TCP/IP.
+Talk to Google Gemini from an Apple II — in 6502 assembly, over bare-metal TCP/IP.
 
 This project is a native Apple II client written entirely in 6502 assembly that negotiates a raw TCP handshake via an Uthernet II ethernet card, connects through a lightweight Python proxy to the Gemini API, and streams AI responses to an 80-column Videx Ultraterm terminal — all on a 1MHz 8-bit machine.
 
@@ -9,7 +9,7 @@ This project is a native Apple II client written entirely in 6502 assembly that 
 ## Features
 
 - **Bare-Metal TCP/IP** — Direct W5100 register manipulation on the Uthernet II. No IP stack, no library, no OS. Just `STA $C0A7`.
-- **HGR2 Boot Screen** — Full-screen hi-res Matrix rain effect with character reveal, written in unrolled 6502 with a shadow buffer and self-modifying dispatch.
+- **HGR2 Boot Screen** — Full-screen hi-res digital rain effect with character reveal, written in unrolled 6502 with a shadow buffer and self-modifying dispatch.
 - **Split-Screen UI** — Hardware soft-switch transitions: HGR2 graphics → 40-column config/diagnostics → 80-column Ultraterm chat.
 - **6-Step Network Diagnostics** — W5100 reset, version register check, indirect mode, source IP assignment, socket open, and TCP connect — all reported on screen before entering chat.
 - **Streaming Proxy** — Python 3 middleware handles TLS 1.3, Gemini API framing, real-time streaming, uppercase conversion, and 79-column word wrap.
@@ -82,19 +82,19 @@ The source is written for the [cc65](https://cc65.github.io/) toolchain (`ca65` 
    ```
    Or manually:
    ```
-   ca65 src/utherultra.s -o build/utherultra.o
-   ld65 -C apple2chat.cfg build/utherultra.o -o build/CHAT.BIN
+   ca65 src/apple2-ai.s -o build/apple2-ai.o
+   ld65 -C apple2chat.cfg build/apple2-ai.o -o build/APPLE2AI.BIN
    ```
 
 ### Part 3: Running on the Apple II
 
-1. Transfer `CHAT.BIN` to your Apple II (ADTPro, FloppyEmu, BOOTI, or floppy disk).
+1. Transfer `APPLE2AI.BIN` to your Apple II (ADTPro, FloppyEmu, BOOTI, or floppy disk).
 2. From the BASIC prompt:
    ```
-   BRUN CHAT.BIN
+   BRUN APPLE2AI.BIN
    ```
    Or use the included `STARTUP` program for auto-boot.
-3. Watch the Matrix rain reveal **APPLE ][ AI**.
+3. Watch the boot screen **APPLE ][ AI**.
 4. On the config screen, press **E** to edit the server IP to your proxy machine's address.
 5. Press **RETURN** to connect. The 6-step diagnostic will verify your Uthernet II, then drop you into the Ultraterm chat.
 
@@ -108,15 +108,18 @@ apple2-ai/
 ├── apple2chat.cfg          # ld65 linker config (load at $0800)
 ├── .gitignore
 ├── src/
-│   └── uther-ultra.s        # 6502 assembly — the whole client
+│   └── apple2-ai.s         # 6502 assembly — the whole client
 ├── proxy/
 │   └── gemini-proxy.py     # Python TCP↔Gemini relay
 ├── disk/
 │   ├── STARTUP             # Applesoft auto-boot stub
 │   └── README.md           # Disk image build instructions
-└── docs/
-    ├── hardware.md          # Slot assignments, wiring, known quirks
-    └── photos/              # Hardware photos and screenshots
+├── docs/
+│    ├── hardware.md        # Slot assignments, wiring, known quirks
+│    └── photos/            # Hardware photos and screenshots
+└── bin/
+    ├── APPLE2AI.BIN        # Applesoft auto-boot stub
+    └── README.md           # Disk image build instructions
 ```
 
 ## Known Apple II Quirks
