@@ -76,8 +76,8 @@ TEXT_ROW    = 1
 TEXT_LEN    = 11    
 TEXT_COL0   = 14     
 REVEAL_ALL  = 11    
-RAIN_DELAY  = 72   ; ~12 seconds of full rain
-FADE_SPEED  = 12    ; Higher = slower drain
+RAIN_DELAY  = 24   ; ~12 seconds of full rain
+FADE_SPEED  = 8    ; Higher = slower drain
 
 BRIGHT_BUF  = $6000
 REVEAL_BUF  = $6400   
@@ -180,9 +180,6 @@ START:
         sta  $23                ; WNDBTM
         jsr  HOME               ; Wipe the text page clean so no garbage bleeds
         ; ----------------------------------------
-
-        ; 1. THE "GHOST FINGER" DEBOUNCE DELAY
-        ldx  #$FF
 
         ; 1. THE "GHOST FINGER" DEBOUNCE DELAY
         ldx  #$FF
@@ -1353,6 +1350,8 @@ CHAT_INIT:
         lda  #0
         sta  TX_IDX         ; Reset typing buffer
         sta  TXBUF
+        sta  RX_CNT_HI      ; <--- CRITICAL FIX: Flush ghost network counts!
+        sta  RX_CNT_LO
         jsr  DRAW_INPUT_PROMPT
 
 ASYNC_CHAT_LOOP:
@@ -1567,7 +1566,7 @@ CLEAR_VIEWPORT:
         txa
         ora  #ULTRA_MCP_MASK
         sta  ULTRA_MCP
-        lda  #$20               ; <--- FIX: Reload A with Space character!
+        lda  #$20               ; <--- CRITICAL FIX: Reload Space!
         ldy  #0
 @W2:    sta  ULTRA_DISP,y
         iny
@@ -1580,7 +1579,7 @@ CLEAR_VIEWPORT:
         lda  #$07
         ora  #ULTRA_MCP_MASK
         sta  ULTRA_MCP
-        lda  #$20               ; <--- FIX: Reload A with Space character!
+        lda  #$20               ; <--- CRITICAL FIX: Reload Space!
         ldy  #0
 @W7:    sta  ULTRA_DISP,y
         iny
@@ -1594,20 +1593,19 @@ CLEAR_VIEWPORT:
         sta  UT_COL
         jsr  ULTRA_SET_CURSOR
         rts
-
 ; ============================================================
 ;  GRACEFUL ULTRATERM BOOTSTRAP
 ; ============================================================
 BOOTSTRAP_ULTRATERM:
-        ; 1. INVISIBLE WIPE: Clear the Videx SRAM while it's still "asleep"
-        bit $C300
+        ; 1. INVISIBLE WIPE: Scrub SRAM before CRTC turns on to prevent sync crash!
+        bit  $C300              ; Secure memory bus
         ldx  #0                 ; Start at Bank 0
 @BANK_LOOP:
         txa
         ora  #ULTRA_MCP_MASK    ; $D0 | bank
-        sta  ULTRA_MCP          ; $C0B2 (Mode Control Port)
+        sta  ULTRA_MCP          ; $C0B2
         
-        lda  #$20               ; ASCII Space character
+        lda  #$20               ; Space character
         ldy  #0                 ; 256 bytes per bank
 @WIPE_LOOP:
         sta  ULTRA_DISP,y       ; Write to $CC00,y
@@ -1615,14 +1613,21 @@ BOOTSTRAP_ULTRATERM:
         bne  @WIPE_LOOP
         
         inx
-        cpx  #8                 ; 8 total banks (0-7)
+        cpx  #8                 ; 8 total banks
         bcc  @BANK_LOOP
 
-        ; 2. AWAKEN THE HARDWARE: Now that memory is clean, turn it on
+        ; 2. AWAKEN THE HARDWARE safely
         lda  #$00               ; Parameter for 80x24 mode
-        jsr  ULTRA_BANKIN       ; JSR $C300 (Firmware Init)
+        jsr  ULTRA_BANKIN       ; JSR $C300
 
         ; 3. RESET LOGICAL STATE
+        lda  #0
+        sta  UT_ROW
+        sta  UT_COL
+        jsr  ULTRA_SET_CURSOR
+        rts
+
+        ; 4. RESET LOGICAL STATE
         lda  #0
         sta  UT_ROW
         sta  UT_COL

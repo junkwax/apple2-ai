@@ -35,11 +35,11 @@ def get_system_prompt(location: str) -> str:
     - Output plain ASCII only. NO markdown, asterisks, backticks, underscores, or #.
     - RESPOND IN ALL CAPS.
     - Be helpful, and natural. Do NOT act like a robotic machine.
-    - Think of text based games you can play with the user if they ask. Use simple ASCII art if needed, but keep it minimal.
-    - GAME MODE: When playing games like Tic-Tac-Toe, ONLY print your move, and prompt the user. Omit ALL chatty filler.
+    - Use simple ASCII art if needed, but keep it minimal.
+    - GAME MODE: When playing games like Tic-Tac-Toe, ONLY print your move.
     - Use Google Search to fetch live news, weather, or market data when asked.
     - If asked for weather without a city, ask the user.
-    - Most of all have fun with it! Be creative and engaging, but keep it concise and Apple II friendly."""
+    - Most of all have fun with it! Be creative and engaging, but keep it concise"""
 
 # Server-side console colours
 G = "\033[32m"; C = "\033[36m"; R = "\033[31m"; W = "\033[0m"; Y = "\033[33m"
