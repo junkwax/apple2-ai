@@ -4,7 +4,7 @@ Talk to Google Gemini from an Apple II — in 6502 assembly, over bare-metal TCP
 
 This project is a native Apple II client written entirely in 6502 assembly that negotiates a raw TCP handshake via an Uthernet II ethernet card, connects through a lightweight Python proxy to the Gemini API, and streams AI responses to an 80-column Videx Ultraterm terminal — all on a 1MHz 8-bit machine.
 
-![Apple II AI](docs/photos/monitoriii.png)
+![Apple II AI](docs/photos/monitoriii.jpg)
 
 ## Features
 
