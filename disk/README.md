@@ -36,7 +36,7 @@ java -jar AppleCommander.jar -p apple2ai.dsk STARTUP A < disk/STARTUP
 
 ```bash
 ac -d33 apple2ai.dsk
-ac -p apple2ai.dsk CHATV8.BIN B 0x0800 < build/APPLE2AI.BIN
+ac -p apple2ai.dsk APPLE2AI.BIN B 0x0800 < build/APPLE2AI.BIN
 ```
 
 ## Transfer Methods
