@@ -74,10 +74,10 @@ SENTINEL    = $FF
 ; Configuration
 TEXT_ROW    = 1     
 TEXT_LEN    = 11    
-TEXT_COL0   = 14     
+TEXT_COL0   = 14   
 REVEAL_ALL  = 11    
-RAIN_DELAY  = 24   ; ~12 seconds of full rain
-FADE_SPEED  = 8    ; Higher = slower drain
+RAIN_DELAY  = 5   ; ~12 seconds of full rain
+FADE_SPEED  = 7   ; Higher = slower drain
 
 BRIGHT_BUF  = $6000
 REVEAL_BUF  = $6400   
@@ -153,7 +153,7 @@ HEAD    = $0200   ; 80 bytes (use 40 for ULTRATERM_RAIN=0)
 WAIT    = $0250
 SPD     = $02A0
 TRL     = $02F0
-TXBUF   = $0380   ; outgoing chat line (79 chars + null)
+TXBUF   = $6500   ; Safely moved to high RAM to hold 160 chars
 
 
 ; ============================================================
@@ -257,7 +257,7 @@ DO_RAIN_FRAME:
         ; The screen is fully dark. Wait for a cinematic beat.
         inc  REVEAL_CNT
         lda  REVEAL_CNT
-        cmp  #45            ; <--- Change this number to tune the delay! (60 = ~1 second)
+        cmp  #10            ; <--- WAS 45. Cuts the dead-air delay before the boot screen!
         bcc  @START_LOOP
         
         ; Delay finished. Transition to HOLD.
@@ -276,7 +276,7 @@ DO_RAIN_FRAME:
 @CLEANUP_CHECK:
         inc  REVEAL_CNT 
         lda  REVEAL_CNT
-        cmp  #100       ; Wait for last trails to finish falling
+        cmp  #40       ; Wait for last trails to finish falling
         bcc  @START_LOOP
         lda  #3         ; Freeze on APPLE ][ AI
         sta  ESTATE
@@ -316,24 +316,13 @@ RS_ROW_LOOP:
         sta  H7
 
         ldx  #0
+
 RS_COL_LOOP:
         stx  COL
         lda  FRAME
         asl
         asl
-        
-        ; --- NEW SPEED MODIFIER LOGIC ---
-        ldy  SPEED_TBL,x     ; 0 = Normal, 1 = Fast, 2 = Slow
-        beq  @APPLY_SPEED
-        cpy  #1
-        bne  @SLOW_SPEED
-        asl                  ; FAST: Shift left again (Double Speed!)
-        jmp  @APPLY_SPEED
-@SLOW_SPEED:
-        lsr                  ; SLOW: Shift right (Half Speed!)
-@APPLY_SPEED:
-        ; --------------------------------
-
+        asl                 ; <--- ADD THIS THIRD ASL! It doubles the rain speed.
         sta  TMP
         lda  COL_29_TBL,x
         tay
@@ -580,8 +569,30 @@ DO_DISPATCH:
         sta  PATCH_ADDR
         lda  DRAW_DISPATCH+1,x
         sta  PATCH_ADDR+1
+
 PATCH_OP: jmp $0000
 PATCH_ADDR = PATCH_OP + 1
+
+UPDATE_SPINNER:
+        inc  SPIN_TICK
+        lda  SPIN_TICK
+        lsr                 
+        lsr
+        lsr
+        and  #$03           
+        tax
+        lda  SPINNER_CHARS,x
+        
+        ; Draw directly to Row 21, Col 79 (Bank 6, offset $DF)
+        ldy  #$DF           
+        bit  $C300
+        pha
+        lda  #$06           ; Select Bank 6
+        ora  #ULTRA_MCP_MASK
+        sta  ULTRA_MCP
+        pla
+        sta  ULTRA_DISP,y   
+        rts
 
 ; ============================================================
 ;  Drawing Subroutines
@@ -676,6 +687,10 @@ DRAW_HEAD:
 ; ============================================================
 ;  Data Tables
 ; ============================================================
+
+SPINNER_CHARS: .byte '|', '/', '-', '\'
+SPIN_TICK:     .byte 0
+
 CELL_LO_TBL:  
         .repeat 24, i
         .byte <(HGR_PAGE + ((i / 8) * $28) + ((i .mod 8) * $80))
@@ -705,22 +720,31 @@ SPEED_TBL:
         .byte 0,0,1,0,0,2,0,0,0,0, 0,0,0,0,1,0,0,0,2,0
         .byte 0,0,0,0,0,0,1,0,0,0, 0,2,0,0,0,0,0,0,0,1
 
-COL_29_TBL:
-        .byte 23, 184, 91, 244, 45, 112, 203, 12, 156, 78
-        .byte 219, 67, 134, 2, 198, 88, 145, 39, 172, 251
-        .byte 14, 99, 210, 55, 128, 7, 189, 42, 233, 80
-        .byte 115, 204, 33, 170, 5, 144, 255, 62, 101, 222
+
 
 TAIL_LEN_TBL:
-        .byte 119, 68, 255, 85, 136, 102, 68, 153, 119, 85
-        .byte 102, 136, 68, 153, 238, 85, 102, 136, 153, 68
-        .byte 136, 85, 102, 255, 68, 119, 153, 85, 136, 102
-        .byte 68, 238, 119, 85, 153, 102, 136, 68, 119, 85
+        ; Columns 0-9 (Thin out the left background by alternating 0s)
+        .byte 119, 0, 255, 0, 136, 0, 0, 0, 119, 0
+        
+        ; Columns 10-19 (Columns 14-19 MUST HAVE RAIN for the left half of the logo!)
+        .byte 102, 0, 68, 0, 238, 85, 102, 136, 153, 68
+        
+        ; Columns 20-29 (Columns 20-24 MUST HAVE RAIN for the right half of the logo!)
+        .byte 136, 85, 102, 255, 68, 0, 153, 0, 136, 0
+        
+        ; Columns 30-39 (Thin out the right background by alternating 0s)
+        .byte 0, 0, 119, 0, 153, 0, 0, 0, 119, 0
 
 COL_7_TBL:    
         .repeat 40, i          ; <--- Change this from 20 to 40
         .byte <(i * 7)
         .endrepeat
+
+COL_29_TBL:
+        .byte 23, 184, 91, 244, 45, 112, 203, 12, 156, 78
+        .byte 219, 67, 134, 2, 198, 88, 145, 39, 172, 251
+        .byte 14, 99, 210, 55, 128, 7, 189, 42, 233, 80
+        .byte 115, 204, 33, 170, 5, 144, 255, 62, 101, 222
 
 ROW_17_TBL:   
         .repeat 24, i
@@ -873,19 +897,13 @@ STRU_FAIL:
         .byte "  UTHERNET II IN SLOT 2?",$0D
         .byte 0
 STRU_HELLO:
-        .byte " ",$0D
-        .byte "    ",$0D
-        .byte " APPLE ][ AI TERMINAL ",$0D
-        .byte " ======================= ",$0D
-        .byte " ",$0D
-        .byte " ",$0D
         .byte 0
 STRU_PROMPT:
         .byte "> ",0
 STRU_YOU:
-        .byte $0D,"YOU: ",0
+        .byte "YOU: ",0
 STRU_AI:
-        .byte "AI: ",0
+        .byte " ",0
 STRU_DISC:
         .byte $0D,"[DISCONNECTED]",0
 
@@ -1015,11 +1033,8 @@ CFG_EDIT:
 ;  DO_CONNECT  with W5100 diagnostic display
 ; ============================================================
 
-
-
 DIAG_HDR:   .byte " UTHERNET II INTERFACE ",0
-DIAG_BR:    .byte " ====================",0
-DIAG_SPC:   .byte " ",0
+DIAG_BR:    .byte " =====================",0
 DIAG_RST:   .byte " 1. W5100 RESET...",0
 DIAG_VER:   .byte " 2. VERSION REG...",0
 DIAG_MODE:  .byte " 3. INDIRECT MODE...",0
@@ -1328,35 +1343,67 @@ DIAG_DONE:
 ; ============================================================
 
 DIAG_GO_CHAT:
-        ; Boot the Videx card seamlessly
         jsr  BOOTSTRAP_ULTRATERM
-
-        ; We are now live in 80-columns. Print the header.
-        lda  #<STRU_HELLO
-        sta  NET_LO
-        lda  #>STRU_HELLO
-        sta  NET_HI
-        jsr  ULTRA_PRINT
         
-        ; Lock in the chat history cursor
-        lda  UT_ROW
+        lda  #$0A           
+        sta  CRTC_SEL
+        lda  #$60           
+        sta  CRTC_DAT
+        lda  #$0B           
+        sta  CRTC_SEL
+        lda  #$08           
+        sta  CRTC_DAT
+
+        ; ── NEW: Start Chat at Row 0 (Top Left) ──
+        lda  #0
         sta  CHAT_ROW
-        lda  UT_COL
+        lda  #0
         sta  CHAT_COL
         
         jmp  CHAT_INIT
 
 CHAT_INIT:
+        lda  #$FF
+        sta  UI_NET_STATE   ; Force the HUD to draw on the very first loop!
+        
         lda  #0
-        sta  TX_IDX         ; Reset typing buffer
+        sta  TX_IDX
         sta  TXBUF
-        sta  RX_CNT_HI      ; <--- CRITICAL FIX: Flush ghost network counts!
+        sta  RX_CNT_HI
         sta  RX_CNT_LO
+        
+        jsr  CLEAR_CHAT_AREA    ; <--- ADD THIS LINE TO WIPE THE SRAM GARBAGE!
+        
         jsr  DRAW_INPUT_PROMPT
 
 ASYNC_CHAT_LOOP:
+        ; ── 1. PULSE CHECK: IS SOCKET ALIVE? ─────────────────
+        lda  #$04
+        sta  W_IDM_AR0
+        lda  #$03           ; S0_SR
+        sta  W_IDM_AR1
+        lda  W_IDM_DR
+        
+        cmp  #$17           ; ESTABLISHED
+        beq  SOCKET_OK      ; <--- Removed @
+        cmp  #$1C           ; CLOSE_WAIT
+        beq  DO_SERVER_DISC
+        cmp  #$00           ; CLOSED
+        beq  DO_SERVER_DISC
+        jmp  SKIP_SPINNER   ; <--- Removed @
 
-        ; ── 1. CHECK NETWORK FOR INCOMING DATA ───────────────
+DO_SERVER_DISC:
+        lda  #0             ; 0 = Offline
+        jsr  DRAW_NET_STATUS
+        jmp  CHAT_DISC      ; Trigger disconnect logic
+
+SOCKET_OK:                  ; <--- Removed @
+        lda  #1             ; 1 = Online
+        jsr  DRAW_NET_STATUS
+        jsr  UPDATE_SPINNER
+SKIP_SPINNER:               ; <--- Removed @
+
+        ; ── 2. CHECK NETWORK FOR INCOMING DATA ───────────────
         lda  #$04
         sta  W_IDM_AR0
         lda  #$26           ; S0_RX_RSR
@@ -1367,75 +1414,86 @@ ASYNC_CHAT_LOOP:
         sta  RX_CNT_LO
         
         ora  RX_CNT_HI
-        beq  CHECK_KBD      ; If size == 0, skip to keyboard check
-        
-        ; ── DATA RECEIVED: Swap to Chat Cursor ───────────────
+        beq  CHECK_KBD
+
+        ; ── DATA RECEIVED ────────────────────────────────────
         lda  CHAT_ROW
         sta  UT_ROW
         lda  CHAT_COL
         sta  UT_COL
         
-        ; Download and print the network block
         jsr  TRR_READ_BLOCK 
         
-        ; Save the updated Chat Cursor
         lda  UT_ROW
         sta  CHAT_ROW
         lda  UT_COL
         sta  CHAT_COL
         
-        ; Restore the Input Cursor to the bottom line
-        lda  #23
+        ; Restore input cursor
+        lda  #21
         sta  UT_ROW
         lda  INPUT_COL
         sta  UT_COL
         jsr  ULTRA_SET_CURSOR
+        jmp  CHECK_KBD
 
 CHECK_KBD:
-        ; ── 2. CHECK KEYBOARD FOR TYPING ─────────────────────
-        lda  KBD            ; Peek at hardware keyboard register ($C000)
-        bpl  ASYNC_CHAT_LOOP; If bit 7 is clear (< 128), no key was pressed
+        lda  KBD            
+        bmi  @KBD_PRESSED
+        jmp  ASYNC_CHAT_LOOP
+
+@KBD_PRESSED:
+        bit  KBDCLR         
         
-        bit  KBDCLR         ; Key pressed! Clear the hardware strobe ($C010)
+        cmp  #$9B               ; ESC key ($1B + $80)
+        beq  @DO_EXIT
         
-        cmp  #$83           ; Ctrl-C
+        cmp  #$83               ; Ctrl-C (Legacy fallback)
         bne  @NOT_EXIT
+@DO_EXIT:
         jmp  CHAT_EXIT
 @NOT_EXIT:
         
-        cmp  #$8D           ; Return
-        bne  @NOT_RET
+        cmp  #$8D               ; Return
+        bne  @NOT_RETURN
         jmp  HANDLE_RETURN
-@NOT_RET:
+@NOT_RETURN:
         
-        cmp  #$88           ; Backspace
+        cmp  #$88               ; Backspace (left arrow)
         bne  @NOT_BS
         jmp  HANDLE_BS
 @NOT_BS:
-        
-        cmp  #$A0           ; Ignore non-printable control keys
-        bcc  ASYNC_CHAT_LOOP
-        
-        ; It's a printable character!
-        and  #$7F           ; Convert to 7-bit ASCII
-        ldx  TX_IDX
-        cpx  #77            ; Prevent overflow (Prompt is 2 chars + 77 = 79)
-        bcs  ASYNC_CHAT_LOOP
-        sta  TXBUF,x        ; Save in buffer
-        inc  TX_IDX
-        
-        sta  TMP_C          ; <--- ADD THIS: Save the typed char safely
+        cmp  #$FF               ; Delete key
+        bne  @NOT_DEL
+        jmp  HANDLE_BS
+@NOT_DEL:
 
-        ; Ensure we are printing to the Input Line
-        lda  #23
+        cmp  #$A0               ; Ignore control keys
+        bcs  @IS_PRINTABLE
+        jmp  ASYNC_CHAT_LOOP
+@IS_PRINTABLE:
+        
+        and  #$7F           
+        ldx  TX_IDX
+        cpx  #77                ; Single line: 77 chars max ("> " + 77 + cursor = 80)
+        bcc  @STORE_CHAR
+        jmp  ASYNC_CHAT_LOOP
+
+@STORE_CHAR:
+        sta  TXBUF,x        
+        inc  TX_IDX
+        sta  TMP_C          
+
+        ; ── ECHO AT ROW 21 ──
+        lda  #21            ; <--- CHANGED FROM 23
         sta  UT_ROW
         lda  INPUT_COL
         sta  UT_COL
         
-        lda  TMP_C          ; <--- ADD THIS: Restore the char!
-        jsr  ULTRA_PUTC     ; Echo to screen
+        lda  TMP_C          
+        jsr  ULTRA_PUTC
         
-        lda  UT_COL         ; Save new typing cursor
+        lda  UT_COL
         sta  INPUT_COL
         jmp  ASYNC_CHAT_LOOP
 
@@ -1446,11 +1504,24 @@ HANDLE_RETURN:
 @DO_RET:
         lda  #0
         sta  TXBUF,x          ; Null-terminate the string
+
+        ; 1. WIPE THE CHAT AREA CLEAN (Rows 0-19)
+        jsr  CLEAR_CHAT_AREA
         
-        ; --- ADD THIS BLOCK ---
-        jsr  CLEAR_VIEWPORT
+        ; ── REDRAW THE [ONLINE] STATUS ──
+        lda  #$FF
+        sta  UI_NET_STATE
         
-        ; Print the user's message at the top of the fresh viewport
+        ; 2. WIPE THE TYPING LINE AND REDRAW STATUS HUD
+        jsr  DRAW_INPUT_PROMPT
+        
+        ; 3. PRINT THE USER'S QUESTION AT THE VERY TOP
+        lda  #0
+        sta  UT_ROW
+        lda  #0
+        sta  UT_COL
+        jsr  ULTRA_SET_CURSOR
+        
         lda  #<STRU_YOU
         sta  NET_LO
         lda  #>STRU_YOU
@@ -1462,46 +1533,57 @@ HANDLE_RETURN:
         lda  #>TXBUF
         sta  NET_HI
         jsr  ULTRA_PRINT
-        jsr  ULTRA_NEWLINE
-        ; ----------------------
         
-        ; Save updated Chat Cursor
+        ; 4. SET THE CURSOR TO ROW 2 FOR THE AI RESPONSE
+        lda  #2
+        sta  UT_ROW
+        lda  #0
+        sta  UT_COL
+        jsr  ULTRA_SET_CURSOR
+        
+        ; Save the Chat Cursor so the network loop knows where to start drawing
         lda  UT_ROW
         sta  CHAT_ROW
         lda  UT_COL
         sta  CHAT_COL
         
-        ; Transmit over W5100
+        ; 5. TRANSMIT TO THE PYTHON PROXY
         jsr  TCP_SEND_LINE
         bcs  CHAT_DISC
         
-        jmp  CHAT_INIT
+        ; 6. RESET TYPING BUFFERS
+        lda  #0
+        sta  TX_IDX
+        sta  TXBUF
+        sta  RX_CNT_HI
+        sta  RX_CNT_LO
+        
+        jmp  ASYNC_CHAT_LOOP
 
 HANDLE_BS:
         ldx  TX_IDX
         bne  @DO_BS
-        jmp  ASYNC_CHAT_LOOP; Can't backspace if buffer is empty
+        jmp  ASYNC_CHAT_LOOP   
+
 @DO_BS:
         dex
         stx  TX_IDX
         
         dec  INPUT_COL
-        lda  #23
+        lda  #21            ; <--- CHANGED FROM 23
         sta  UT_ROW
         lda  INPUT_COL
         sta  UT_COL
         
         jsr  ULTRA_SET_CURSOR
-        lda  #$20           ; Erase with Space
+        lda  #$20           
         jsr  ULTRA_PUTC
         
-        ; PUTC advances the cursor, so we must pull it back again
         dec  UT_COL
         jsr  ULTRA_SET_CURSOR
         jmp  ASYNC_CHAT_LOOP
 
 CHAT_DISC:
-        ; Move cursor to chat area for disconnect message
         lda  CHAT_ROW
         sta  UT_ROW
         lda  CHAT_COL
@@ -1516,8 +1598,33 @@ CHAT_EXIT:
         jsr  HOME
         rts
 
+; ── DRAW_INPUT_PROMPT: "> " on row 23, clear the line ────────
 DRAW_INPUT_PROMPT:
-        lda  #23
+        bit  $C300
+        
+        ; 1. Clear Row 21 & 22 (Bank 6, offset $90 to $FF)
+        lda  #$06
+        ora  #ULTRA_MCP_MASK
+        sta  ULTRA_MCP
+        lda  #$20
+        ldy  #$90
+@C1:    sta  ULTRA_DISP,y
+        iny
+        bne  @C1
+        
+        ; 2. Clear Row 22 end & Row 23 (Bank 7, offset $00 to $7F)
+        lda  #$07
+        ora  #ULTRA_MCP_MASK
+        sta  ULTRA_MCP
+        lda  #$20
+        ldy  #$00
+@C2:    sta  ULTRA_DISP,y
+        iny
+        cpy  #$80
+        bcc  @C2
+
+        ; 3. Draw Input Prompt on Row 21
+        lda  #21
         sta  UT_ROW
         lda  #0
         sta  UT_COL
@@ -1525,77 +1632,154 @@ DRAW_INPUT_PROMPT:
         jsr  ULTRA_PUTC
         lda  #' '
         jsr  ULTRA_PUTC
-        
-        ; Safely clear the rest of Row 23 using direct memory writes 
-        ; Row 23 is Bank 7, offsets $30-$7F. We start at Col 2 ($32).
+
+        ; 4. Draw the Bottom Status Bar (Row 23 / Bank 7, offset $30)
         lda  #$07
         ora  #ULTRA_MCP_MASK
         sta  ULTRA_MCP
-        lda  #$20
-        ldy  #$32
-        bit $C300
-
-@CLR_IN:
+        ldy  #$30               
+@SB_CLR:
+        lda  #$A0               ; Inverse Space
         sta  ULTRA_DISP,y
         iny
         cpy  #$80
-        bcc  @CLR_IN
+        bcc  @SB_CLR
+
+        ldx  #0
+        ldy  #$31               ; Pad by 1 space
+@SB_TXT:
+        lda  STATUS_TXT,x
+        beq  @DONE
+        ora  #$80               ; Make text inverse
+        sta  ULTRA_DISP,y
+        inx
+        iny
+        bne  @SB_TXT
+@DONE:
         
+        ; 5. Lock cursor back on Row 21 for typing
         lda  #2
         sta  INPUT_COL
         sta  UT_COL
+        lda  #21
+        sta  UT_ROW
         jsr  ULTRA_SET_CURSOR
         rts
 
-CLEAR_VIEWPORT:
-        bit  $C300              ; Secure the memory bus
-        
-        ; 1. Clear Bank 1 (Row 4 starts at offset $40)
-        lda  #$01
+STATUS_TXT: .byte "ESC: QUIT   RETURN: SEND",0
+
+; ── CLEAR_CHAT_AREA: Wipe rows 1-22, preserve row 0 title ───
+CLEAR_CHAT_AREA:
+        bit  $C300
+        ; Clear Banks 0 through 5
+        ldx  #0                 
+@BANK:  txa
         ora  #ULTRA_MCP_MASK
         sta  ULTRA_MCP
         lda  #$20
-        ldy  #$40
-@W1:    sta  ULTRA_DISP,y
+        ldy  #0
+@PAGE:  sta  ULTRA_DISP,y
         iny
-        bne  @W1
+        bne  @PAGE
+        inx
+        cpx  #6
+        bcc  @BANK
         
-        ; 2. Clear Banks 2 through 6 (Full 256-byte pages)
-        ldx  #2
-@W2_LOOP:
-        txa
+        ; Clear Bank 6 up to offset $40 (Row 19 ends at $3F)
+        lda  #$06
         ora  #ULTRA_MCP_MASK
         sta  ULTRA_MCP
-        lda  #$20               ; <--- CRITICAL FIX: Reload Space!
-        ldy  #0
-@W2:    sta  ULTRA_DISP,y
+        lda  #$20
+        ldy  #$00
+@B6:    sta  ULTRA_DISP,y
         iny
-        bne  @W2
-        inx
-        cpx  #7
-        bcc  @W2_LOOP
-        
-        ; 3. Clear Bank 7 (Row 22 ends at offset $2F)
+        cpy  #$40               ; <--- STOPS EXACTLY AT END OF ROW 19
+        bcc  @B6
+        rts
+
+CLEAR_VIEWPORT:
+; ── SCROLL: Move rows 2-22 up to rows 1-21, blank row 22 ────
+; Source: Row 2 = Bank $00, Offset $A0
+; Dest:   Row 1 = Bank $00, Offset $50
+; End:    Source reaches Row 23 = Bank $07, Offset $30
+
+        bit  $C300
+
+        ; Source = Row 2
+        lda  #$A0
+        sta  TMP_A
+        lda  #$00
+        sta  TMP_B
+
+        ; Dest = Row 1
+        lda  #$50
+        sta  SCRL_LO
+        lda  #$00
+        sta  SCRL_HI
+
+@SV_LOOP:
+        lda  TMP_B
+        ora  #ULTRA_MCP_MASK
+        sta  ULTRA_MCP
+        ldy  TMP_A
+        lda  ULTRA_DISP,y
+        sta  TMP_C
+
+        lda  SCRL_HI
+        ora  #ULTRA_MCP_MASK
+        sta  ULTRA_MCP
+        ldy  SCRL_LO
+        lda  TMP_C
+        sta  ULTRA_DISP,y
+
+        inc  TMP_A
+        bne  @SV_S_OK
+        inc  TMP_B
+@SV_S_OK:
+        inc  SCRL_LO
+        bne  @SV_D_OK
+        inc  SCRL_HI
+@SV_D_OK:
+        ; Stop when source reaches Row 23 (bank $07, offset $30)
+        lda  TMP_B
+        cmp  #$07
+        bcc  @SV_LOOP
+        lda  TMP_A
+        cmp  #$30
+        bcc  @SV_LOOP
+
+        ; Blank row 22 (Bank 6, offsets $E0-$FF + Bank 7, offsets $00-$2F)
+        lda  #$06
+        ora  #ULTRA_MCP_MASK
+        sta  ULTRA_MCP
+        lda  #$20
+        ldy  #$E0
+@B22A:  sta  ULTRA_DISP,y
+        iny
+        bne  @B22A
+
         lda  #$07
         ora  #ULTRA_MCP_MASK
         sta  ULTRA_MCP
-        lda  #$20               ; <--- CRITICAL FIX: Reload Space!
-        ldy  #0
-@W7:    sta  ULTRA_DISP,y
+        lda  #$20
+        ldy  #$00
+@B22B:  sta  ULTRA_DISP,y
         iny
         cpy  #$30
-        bcc  @W7
-        
-        ; 4. Set Cursor to the top of the newly cleared Viewport
-        lda  #4
+        bcc  @B22B
+
+        ; Pin cursor at row 22, col 0
+        lda  #22
         sta  UT_ROW
         lda  #0
         sta  UT_COL
         jsr  ULTRA_SET_CURSOR
         rts
+
 ; ============================================================
 ;  GRACEFUL ULTRATERM BOOTSTRAP
 ; ============================================================
+
 BOOTSTRAP_ULTRATERM:
         ; 1. INVISIBLE WIPE: Scrub SRAM before CRTC turns on to prevent sync crash!
         bit  $C300              ; Secure memory bus
@@ -1625,14 +1809,82 @@ BOOTSTRAP_ULTRATERM:
         sta  UT_ROW
         sta  UT_COL
         jsr  ULTRA_SET_CURSOR
+        
+        jsr  DRAW_UI_FRAMING    ; <--- ADD THIS LINE HERE!
         rts
 
-        ; 4. RESET LOGICAL STATE
-        lda  #0
-        sta  UT_ROW
-        sta  UT_COL
-        jsr  ULTRA_SET_CURSOR
+DRAW_UI_FRAMING:
+        bit  $C300
+
+        ; ── Row 0: Title Text (Normal Video) ──
+        lda  #$00
+        ora  #ULTRA_MCP_MASK
+        sta  ULTRA_MCP
+
+        ldx  #0
+@TITLE_LOOP:
+        lda  UI_TITLE_TEXT,x
+        beq  @ROW1
+        sta  ULTRA_DISP,x
+        inx
+        bne  @TITLE_LOOP
+
+@ROW1:
+        ; ── Row 1: Solid Divider Line ──
+        ; Row 1 lives in Bank 0, from offsets $50 to $9F
+        lda  #'-'               ; Use hyphens for the divider
+        ldy  #$50
+@DIV_LOOP:
+        sta  ULTRA_DISP,y
+        iny
+        cpy  #$A0               ; Stop exactly where Row 2 begins
+        bcc  @DIV_LOOP
         rts
+
+UI_TITLE_TEXT:
+        .byte " APPLE ][ AI",0
+
+DRAW_NET_STATUS:
+        cmp  UI_NET_STATE
+        beq  @DONE              ; Skip if the state hasn't changed!
+        sta  UI_NET_STATE
+
+        pha                     ; Save A register
+        bit  $C300
+        lda  #$00
+        ora  #ULTRA_MCP_MASK    ; Select Bank 0 (Row 0 Title Bar)
+        sta  ULTRA_MCP
+
+        pla                     ; Restore A register
+        bne  @DRAW_ON
+        lda  #<STR_OFFLINE
+        sta  NET_LO
+        lda  #>STR_OFFLINE
+        sta  NET_HI
+        jmp  @DRAW
+@DRAW_ON:
+        lda  #<STR_ONLINE
+        sta  NET_LO
+        lda  #>STR_ONLINE
+        sta  NET_HI
+@DRAW:
+        ldy  #0
+        ldx  #68                ; Right-align! (Leaves 1 col padding on the edge)
+@LOOP:
+        lda  (NET_LO),y
+        beq  @DONE
+        ; ora  #$80               <--- DELETE THIS LINE!
+        sta  ULTRA_DISP,x
+        iny
+        inx
+        bne  @LOOP
+@DONE:
+        rts
+
+; Status Data Variables
+UI_NET_STATE: .byte $FF
+STR_ONLINE:   .byte "[ONLINE]   ",0
+STR_OFFLINE:  .byte "[OFFLINE]  ",0
 
 UC_BANK:
         txa
@@ -1681,13 +1933,17 @@ ULTRA_NEWLINE:
         sta  UT_COL
         inc  UT_ROW
         lda  UT_ROW
-        cmp  #23            
+        cmp  #20            ; <--- Wrap when hitting Row 20
         bcc  UNL_OK
         
-        ; We hit the bottom! Wipe the viewport and wrap back to the top.
-        jsr  CLEAR_VIEWPORT
-        rts                 ; CLEAR_VIEWPORT handles ULTRA_SET_CURSOR for us
-
+        jsr  CLEAR_CHAT_AREA
+        
+        ; Reset cursor to top
+        lda  #0
+        sta  UT_ROW
+        sta  UT_COL
+        jsr  ULTRA_SET_CURSOR
+        rts
 UNL_OK:
         jsr  ULTRA_SET_CURSOR
         rts
@@ -1763,6 +2019,17 @@ ULTRA_SET_CURSOR:
         sta  CRTC_SEL       ; select R15
         lda  TMP_A
         sta  CRTC_DAT       ; write low byte
+        rts
+
+ENABLE_CURSOR:
+        lda  #$0A           ; CRTC R10: Cursor Start & Blink
+        sta  CRTC_SEL
+        lda  #$60           ; $60 = Fast Blink, Start on scanline 0
+        sta  CRTC_DAT
+        lda  #$0B           ; CRTC R11: Cursor End
+        sta  CRTC_SEL
+        lda  #$08           ; End on scanline 8 (Block cursor)
+        sta  CRTC_DAT
         rts
 
 ULTRA_PRINT:
